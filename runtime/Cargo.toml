@@ -1,4 +1,4 @@
-[package]
+	[package]
 name = "minimal-template-runtime"
 description = "A solochain runtime template built with Substrate, part of Polkadot Sdk."
 version = "0.1.0"
