@@ -63,6 +63,7 @@ pub mod my_pallet {
 	}
 }
 
+#[cfg(test)]
 mod runtime {
 	use super::*;
 	use polkadot_sdk::frame_support::derive_impl;
@@ -102,6 +103,7 @@ mod test {
 	fn first_test() {
 		TestState::new_empty().execute_with(|| {
 			let account = 1_u64;
+
 			assert_eq!(Balances::<Runtime>::get(&account), None);
 			assert_eq!(TotalInsurance::<Runtime>::get(), None);
 
