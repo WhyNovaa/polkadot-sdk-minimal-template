@@ -6,7 +6,6 @@
 #![cfg_attr(not(feature = "std"), no_std)]
 
 use polkadot_sdk::{frame_system, polkadot_sdk_frame as frame};
-
 // Re-export all pallet parts, this is needed to properly import the pallet into the runtime.
 pub use my_pallet::*;
 #[frame::pallet(dev_mode)]
@@ -65,14 +64,13 @@ pub mod my_pallet {
 }
 
 mod runtime {
-
+	use super::*;
 	use polkadot_sdk::frame_support::derive_impl;
 	use polkadot_sdk::frame_system;
 
-	use super::*;
-	use crate::my_pallet as pallet_currency;
-	use crate::frame::runtime::prelude::construct_runtime;
-	
+	use my_pallet as pallet_currency;
+	use frame::runtime::prelude::construct_runtime;
+
 	construct_runtime!(
 		pub enum Runtime {
 			System: frame_system,
@@ -90,31 +88,31 @@ mod runtime {
 	impl pallet_currency::Config for Runtime {}
 }
 
-// TODO
-/*#[cfg(test)]
+#[cfg(test)]
 mod test {
-	use polkadot_sdk::emulated_integration_tests_common::accounts::ALICE;
+	use super::*;
+
+
 	use polkadot_sdk::frame_support::assert_ok;
-	use polkadot_sdk::polkadot_sdk_frame::testing_prelude::TestState;
-	use super::my_pallet::*;
-	use frame::test::prelude;
-use polkadot_sdk::sp_io::TestExternalities;
+	use frame::testing_prelude::*;
+
 	use crate::runtime::{Runtime, RuntimeOrigin};
 
 	#[test]
 	fn first_test() {
 		TestState::new_empty().execute_with(|| {
-			assert_eq!(Balances::<Runtime>::get(&ALICE), None);
+			let account = 1_u64;
+			assert_eq!(Balances::<Runtime>::get(&account), None);
 			assert_eq!(TotalInsurance::<Runtime>::get(), None);
 
 			assert_ok!(Pallet::<Runtime>::mint_unsafe(
-				RuntimeOrigin::signed(ALICE),
-				ALICE,
+				RuntimeOrigin::signed(account),
+				account,
 				100
 			));
 
-			assert_eq!(Balances::<Runtime>::get(&ALICE), 100);
-			assert_eq!(TotalInsurance::<Runtime>::get(), 100);
-		})
+			assert_eq!(Balances::<Runtime>::get(&account), Some(100));
+			assert_eq!(TotalInsurance::<Runtime>::get(), Some(100));
+		});
 	}
-}*/
+}
