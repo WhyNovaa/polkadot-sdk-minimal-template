@@ -35,6 +35,8 @@ use polkadot_sdk::{
 	},
 	*,
 };
+use polkadot_sdk::frame_support::PalletId;
+
 
 /// The runtime version.
 #[runtime_version]
@@ -156,8 +158,22 @@ impl pallet_transaction_payment::Config for Runtime {
 	type LengthToFee = FixedFee<1, <Self as pallet_balances::Config>::Balance>;
 }
 
+pub type Balance = u64;
+pub type BlockNumber = u32;
 // Implements the types required for the template pallet.
-impl pallet_minimal_template::Config for Runtime {}
+parameter_types! {
+    pub AccumulationPeriod: BlockNumber = 0;
+    pub const FaucetAmount: Balance = 250_u64;
+    pub const FaucetPalletId: PalletId = PalletId(*b"ATFAUCET");
+}
+
+
+impl pallet_minimal_template::Config for Runtime {
+	type Currency = Balances;
+	type AccumulationPeriod = AccumulationPeriod;
+	type FaucetAmount = FaucetAmount;
+	type PalletId = FaucetPalletId;
+}
 
 type Block = frame::runtime::types_common::BlockOf<Runtime, SignedExtra>;
 type Header = HeaderFor<Runtime>;
