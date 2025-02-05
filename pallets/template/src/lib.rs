@@ -33,13 +33,13 @@ pub mod my_pallet {
 	};
 	use polkadot_sdk::sp_runtime::transaction_validity::InvalidTransaction;
 
-	pub type Balance = u128;
+	/*pub type Balance = u128;
 
 	#[pallet::storage]
 	pub type TotalInsurance<T: Config> = StorageValue<_, Balance>;
 
 	#[pallet::storage]
-	pub type Balances<T: Config> = StorageMap<_, _, T::AccountId, Balance>;
+	pub type Balances<T: Config> = StorageMap<_, _, T::AccountId, Balance>;*/
 
 	#[pallet::storage]
 	pub type LastRequests<T: Config> = StorageMap<_, Blake2_128Concat, T::AccountId, (BalanceOf<T>, BlockNumberFor<T>), ValueQuery>;
@@ -77,7 +77,7 @@ pub mod my_pallet {
 
 	#[pallet::call]
 	impl<T: Config> Pallet<T> {
-		#[pallet::call_index(0)]
+		/*#[pallet::call_index(0)]
 		pub fn mint_unsafe(
 			origin: T::RuntimeOrigin,
 			dest: T::AccountId,
@@ -108,7 +108,7 @@ pub mod my_pallet {
 			Balances::<T>::insert(sender, reminder);
 
 			Ok(())
-		}
+		}*/
 
 		#[pallet::call_index(2)]
 		pub fn token_faucet(
@@ -198,7 +198,7 @@ pub mod my_pallet {
 }
 
 
-#[cfg(test)]
+/*#[cfg(test)]
 pub mod runtime {
 	use super::*;
 	use polkadot_sdk::{
@@ -269,4 +269,4 @@ mod test {
 			assert_eq!(TotalInsurance::<Runtime>::get(), Some(100));
 		});
 	}
-}
+}*/
