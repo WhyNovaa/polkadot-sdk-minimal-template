@@ -44,7 +44,6 @@ pub mod my_pallet {
 	#[pallet::storage]
 	pub type LastRequests<T: Config> = StorageMap<_, Blake2_128Concat, T::AccountId, (BalanceOf<T>, BlockNumberFor<T>), ValueQuery>;
 
-
 	#[pallet::config]
 	pub trait Config: polkadot_sdk::frame_system::Config {
 		type Currency: Currency<Self::AccountId>;
@@ -70,7 +69,7 @@ pub mod my_pallet {
 	pub enum Error<T> {
 		AmountTooHigh,
 		RequestLimitExceeded,
-		NotEnoughFaucetBalance
+		NotEnoughFaucetBalance,
 	}
 
 	#[pallet::pallet]
@@ -118,24 +117,56 @@ pub mod my_pallet {
 			amount: BalanceOf<T>,
 		) -> DispatchResult {
 			ensure_none(origin)?;
+
 			ensure!(amount <= T::FaucetAmount::get(), Error::<T>::AmountTooHigh);
 
 			let (balance, last_time) = LastRequests::<T>::get(&dest);
 			let now = frame_system::Pallet::<T>::block_number();
 			let period = now - last_time;
 
-			ensure!(period >= T::AccumulationPeriod::get(), Error::<T>::RequestLimitExceeded);
+			let (total, now) = if period >= T::AccumulationPeriod::get() {
+				(amount, now)
+			} else {
+				(balance + amount, last_time)
+			};
 
-			let total = amount + balance;
+			ensure!(total <= T::FaucetAmount::get(), Error::<T>::RequestLimitExceeded);
 
 			let account_id = Self::account_id();
 			let faucet_balance = T::Currency::free_balance(&account_id);
 
-			ensure!(faucet_balance >= amount, Error::<T>::RequestLimitExceeded);
+			ensure!(faucet_balance >= amount, Error::<T>::NotEnoughFaucetBalance);
 
 			T::Currency::transfer(&account_id, &dest, amount, ExistenceRequirement::AllowDeath)?;
 
 			LastRequests::<T>::insert(&dest, (total, now));
+
+			Ok(())
+		}
+
+		#[pallet::call_index(3)]
+		pub fn refill_pallet(
+			origin: T::RuntimeOrigin,
+			amount: BalanceOf<T>,
+		) -> DispatchResult {
+			let sender = ensure_signed(origin)?;
+
+			let account_id = Self::account_id();
+
+			T::Currency::transfer(&sender, &account_id, amount, ExistenceRequirement::KeepAlive)?;
+
+			Ok(())
+		}
+
+		#[pallet::call_index(4)]
+		pub fn set_balance(
+			origin: T::RuntimeOrigin,
+			who: T::AccountId,
+			amount: BalanceOf<T>,
+		) -> DispatchResult {
+			ensure_none(origin)?;
+
+			T::Currency::deposit_into_existing(&who, amount)?;
 
 			Ok(())
 		}
@@ -150,6 +181,12 @@ pub mod my_pallet {
 				Call::token_faucet {dest, amount} => {
 					ValidTransaction::with_tag_prefix("Faucet")
 						.and_provides((dest, amount))
+						.propagate(true)
+						.build()
+				},
+				Call::set_balance {who, amount} => {
+					ValidTransaction::with_tag_prefix("Faucet")
+						.and_provides((who, amount))
 						.propagate(true)
 						.build()
 				},

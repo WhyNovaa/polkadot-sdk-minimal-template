@@ -160,9 +160,8 @@ impl pallet_transaction_payment::Config for Runtime {
 
 pub type Balance = u64;
 pub type BlockNumber = u32;
-// Implements the types required for the template pallet.
 parameter_types! {
-    pub AccumulationPeriod: BlockNumber = 0;
+    pub AccumulationPeriod: BlockNumber = 20;
     pub const FaucetAmount: Balance = 250_u64;
     pub const FaucetPalletId: PalletId = PalletId(*b"ATFAUCET");
 }
@@ -175,6 +174,8 @@ impl pallet_minimal_template::Config for Runtime {
 	type PalletId = FaucetPalletId;
 }
 
+
+// Implements the types required for the template pallet.
 type Block = frame::runtime::types_common::BlockOf<Runtime, SignedExtra>;
 type Header = HeaderFor<Runtime>;
 
