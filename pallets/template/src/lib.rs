@@ -69,7 +69,7 @@ pub mod my_pallet {
 
 	#[pallet::call]
 	impl<T: Config> Pallet<T> {
-		#[pallet::call_index(2)]
+		#[pallet::call_index(0)]
 		pub fn token_faucet(
 			origin: T::RuntimeOrigin,
 			dest: T::AccountId,
@@ -103,7 +103,7 @@ pub mod my_pallet {
 			Ok(())
 		}
 
-		#[pallet::call_index(3)]
+		#[pallet::call_index(1)]
 		pub fn refill_pallet(
 			origin: T::RuntimeOrigin,
 			amount: BalanceOf<T>,
@@ -117,7 +117,7 @@ pub mod my_pallet {
 			Ok(())
 		}
 
-		#[pallet::call_index(4)]
+		#[pallet::call_index(2)]
 		pub fn set_balance(
 			origin: T::RuntimeOrigin,
 			who: T::AccountId,
