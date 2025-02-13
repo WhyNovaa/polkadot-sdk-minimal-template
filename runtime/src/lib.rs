@@ -37,11 +37,7 @@ use polkadot_sdk::{
     *,
 };
 
-
 pub use pallet_contracts;
-
-use polkadot_sdk::sp_consensus_babe::Randomness;
-use polkadot_sdk::sp_runtime::offchain::storage_lock::Time;
 
 /// The runtime version.
 #[runtime_version]
@@ -185,16 +181,15 @@ impl pallet_minimal_template::Config for Runtime {
     type PalletId = FaucetPalletId;
 }
 
-
 parameter_types! {
     pub DefaultSchedule: pallet_contracts::Schedule<Runtime> = pallet_contracts::Schedule::default();
 }
 #[derive_impl(pallet_contracts::config_preludes::TestDefaultConfig)]
 impl pallet_contracts::Config for Runtime {
     type Currency = Balances;
-    
+
     type Schedule = DefaultSchedule;
-    
+
     type CallStack = [pallet_contracts::Frame<Self>; 5];
 }
 
