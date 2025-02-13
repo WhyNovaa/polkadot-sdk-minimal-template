@@ -14,7 +14,7 @@ codec = { workspace = true }
 scale-info = { workspace = true }
 polkadot-sdk = { workspace = true, features = ["experimental", "pallet-balances", "pallet-sudo", "pallet-timestamp", "pallet-transaction-payment", "pallet-transaction-payment-rpc-runtime-api", "runtime"] }
 pallet-minimal-template.workspace = true
-
+pallet-contracts.workspace = true
 [build-dependencies]
 polkadot-sdk = { optional = true, workspace = true, features = ["substrate-wasm-builder"] }
 
@@ -25,4 +25,5 @@ std = [
 	"pallet-minimal-template/std",
 	"polkadot-sdk/std",
 	"scale-info/std",
+	"pallet-contracts/std",
 ]

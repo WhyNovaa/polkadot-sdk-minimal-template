@@ -37,6 +37,12 @@ use polkadot_sdk::{
     *,
 };
 
+
+pub use pallet_contracts;
+
+use polkadot_sdk::sp_consensus_babe::Randomness;
+use polkadot_sdk::sp_runtime::offchain::storage_lock::Time;
+
 /// The runtime version.
 #[runtime_version]
 pub const VERSION: RuntimeVersion = RuntimeVersion {
@@ -83,6 +89,7 @@ type SignedExtra = (
 // Composes the runtime by adding all the used pallets and deriving necessary types.
 #[frame_construct_runtime]
 mod runtime {
+    use pallet_contracts;
     /// The main runtime type.
     #[runtime::runtime]
     #[runtime::derive(
@@ -121,6 +128,9 @@ mod runtime {
     /// A minimal pallet template.
     #[runtime::pallet_index(5)]
     pub type Template = pallet_minimal_template::Pallet<Runtime>;
+
+    #[runtime::pallet_index(6)]
+    pub type Ink = pallet_contracts::pallet::Pallet<Runtime>;
 }
 
 parameter_types! {
@@ -173,6 +183,19 @@ impl pallet_minimal_template::Config for Runtime {
     type AccumulationPeriod = AccumulationPeriod;
     type FaucetAmount = FaucetAmount;
     type PalletId = FaucetPalletId;
+}
+
+
+parameter_types! {
+    pub DefaultSchedule: pallet_contracts::Schedule<Runtime> = pallet_contracts::Schedule::default();
+}
+#[derive_impl(pallet_contracts::config_preludes::TestDefaultConfig)]
+impl pallet_contracts::Config for Runtime {
+    type Currency = Balances;
+    
+    type Schedule = DefaultSchedule;
+    
+    type CallStack = [pallet_contracts::Frame<Self>; 5];
 }
 
 // Implements the types required for the template pallet.
