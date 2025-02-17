@@ -38,6 +38,12 @@ use polkadot_sdk::{
 };
 
 pub use pallet_contracts;
+use pallet_contracts::config_preludes::{
+    CodeHashLockupDepositPercent, DefaultDepositLimit, DepositPerByte, DepositPerItem,
+    MaxDelegateDependencies,
+};
+use pallet_contracts::Config;
+use polkadot_sdk::frame_support::traits::Nothing;
 
 /// The runtime version.
 #[runtime_version]
@@ -45,7 +51,7 @@ pub const VERSION: RuntimeVersion = RuntimeVersion {
     spec_name: create_runtime_str!("minimal-template-runtime"),
     impl_name: create_runtime_str!("minimal-template-runtime"),
     authoring_version: 1,
-    spec_version: 0,
+    spec_version: 1,
     impl_version: 1,
     apis: RUNTIME_API_VERSIONS,
     transaction_version: 1,
@@ -127,6 +133,9 @@ mod runtime {
 
     #[runtime::pallet_index(6)]
     pub type Ink = pallet_contracts::pallet::Pallet<Runtime>;
+
+    #[runtime::pallet_index(7)]
+    pub type RandomnessCollectiveFlip = pallet_insecure_randomness_collective_flip;
 }
 
 parameter_types! {
@@ -166,6 +175,8 @@ impl pallet_transaction_payment::Config for Runtime {
     type LengthToFee = FixedFee<1, <Self as pallet_balances::Config>::Balance>;
 }
 
+impl pallet_insecure_randomness_collective_flip::Config for Runtime {}
+
 type Balance = u64;
 type BlockNumber = u32;
 parameter_types! {
@@ -181,16 +192,54 @@ impl pallet_minimal_template::Config for Runtime {
     type PalletId = FaucetPalletId;
 }
 
-parameter_types! {
-    pub DefaultSchedule: pallet_contracts::Schedule<Runtime> = pallet_contracts::Schedule::default();
+fn schedule<T: pallet_contracts::Config>() -> pallet_contracts::Schedule<T> {
+    pallet_contracts::Schedule {
+        limits: pallet_contracts::Limits {
+            runtime_memory: 1024 * 1024 * 1024,
+            ..Default::default()
+        },
+        ..Default::default()
+    }
 }
-#[derive_impl(pallet_contracts::config_preludes::TestDefaultConfig)]
+
+parameter_types! {
+    pub DefaultSchedule: pallet_contracts::Schedule<Runtime> = schedule::<Runtime>();
+}
+
 impl pallet_contracts::Config for Runtime {
+    type Time = Timestamp;
+    type Randomness = RandomnessCollectiveFlip;
+
     type Currency = Balances;
+    type RuntimeEvent = RuntimeEvent;
+    type RuntimeCall = RuntimeCall;
+    type RuntimeHoldReason = RuntimeHoldReason;
+    type CallFilter = Nothing;
+    type WeightPrice = pallet_transaction_payment::Pallet<Self>;
+    type WeightInfo = pallet_contracts::weights::SubstrateWeight<Self>;
+    type ChainExtension = ();
 
     type Schedule = DefaultSchedule;
 
-    type CallStack = [pallet_contracts::Frame<Self>; 5];
+    type CallStack = [pallet_contracts::Frame<Self>; 23];
+    type DepositPerByte = DepositPerByte;
+    type DefaultDepositLimit = DefaultDepositLimit;
+    type DepositPerItem = DepositPerItem;
+    type CodeHashLockupDepositPercent = CodeHashLockupDepositPercent;
+    type AddressGenerator = pallet_contracts::DefaultAddressGenerator;
+    type MaxCodeLen = ConstU32<{ 128 * 1024 * 1024 }>;
+    type MaxStorageKeyLen = ConstU32<128>;
+    type MaxTransientStorageSize = ConstU32<{ 1 * 1024 * 1024 }>;
+    type MaxDelegateDependencies = MaxDelegateDependencies;
+    type UnsafeUnstableInterface = ConstBool<true>;
+    type MaxDebugBufferLen = ConstU32<{ 2 * 1024 * 1024 }>;
+    type UploadOrigin = EnsureSigned<Self::AccountId>;
+    type InstantiateOrigin = EnsureSigned<Self::AccountId>;
+    type Migrations = ();
+    type Debug = ();
+    type Environment = ();
+    type ApiVersion = ();
+    type Xcm = ();
 }
 
 // Implements the types required for the template pallet.
