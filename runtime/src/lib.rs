@@ -249,7 +249,17 @@ type Header = HeaderFor<Runtime>;
 type RuntimeExecutive =
     Executive<Runtime, Block, frame_system::ChainContext<Runtime>, Runtime, AllPalletsWithSystem>;
 
-impl_runtime_apis! {
+sp_api::decl_runtime_apis! {
+    pub trait NodeNameApi {
+        fn get_name() -> u32;
+    }
+}
+sp_api::impl_runtime_apis! {
+    impl self::NodeNameApi<Block> for Runtime {
+        fn get_name() -> u32 {
+            32
+        }
+    }
     impl apis::Core<Block> for Runtime {
         fn version() -> RuntimeVersion {
             VERSION
