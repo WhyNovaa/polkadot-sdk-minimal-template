@@ -17,5 +17,6 @@
 
 pub mod chain_spec;
 pub(crate) mod cli;
+pub mod node_name;
 pub mod rpc;
 pub mod service;

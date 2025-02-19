@@ -21,12 +21,9 @@
 //! capabilities that are specific to this project's runtime configuration.
 
 #![warn(missing_docs)]
-
-use jsonrpsee::core::RpcResult;
-use jsonrpsee::proc_macros::rpc;
+use crate::node_name::{NodeName, NodeNameApiServer};
 use jsonrpsee::RpcModule;
 use minimal_template_runtime::interface::{AccountId, Nonce, OpaqueBlock};
-use minimal_template_runtime::NodeNameApi;
 use polkadot_sdk::polkadot_service::BlockT;
 use polkadot_sdk::{
     sc_transaction_pool_api::TransactionPool,
@@ -36,43 +33,13 @@ use polkadot_sdk::{
 use sp_api::ProvideRuntimeApi;
 use std::sync::Arc;
 
-#[rpc(client, server)]
-pub trait NodeNameApi<Block> {
-    #[method(name = "node_name")]
-    fn get_name(&self) -> RpcResult<u32>;
-}
-
-pub struct NodeName<C, P> {
-    client: Arc<C>,
-    _marker: std::marker::PhantomData<P>,
-}
-
-impl<C, P> NodeName<C, P> {
-    pub fn new(client: Arc<C>) -> Self {
-        Self {
-            client,
-            _marker: Default::default(),
-        }
-    }
-}
-
-impl<C, Block> NodeNameApiServer<<Block as BlockT>::Hash> for NodeName<C, Block>
-where
-    Block: BlockT,
-    C: ProvideRuntimeApi<Block> + HeaderBackend<Block> + Send + Sync + 'static,
-    C::Api: NodeNameApi<Block>,
-{
-    fn get_name(&self) -> RpcResult<u32> {
-        Ok(32)
-    }
-}
-
 /// Full client dependencies.
 pub struct FullDeps<C, P> {
     /// The client instance to use.
     pub client: Arc<C>,
     /// Transaction pool instance.
     pub pool: Arc<P>,
+    pub node_name: Arc<String>,
 }
 
 #[docify::export]
@@ -90,15 +57,19 @@ where
         + 'static,
     C::Api: sp_block_builder::BlockBuilder<OpaqueBlock>,
     C::Api: substrate_frame_rpc_system::AccountNonceApi<OpaqueBlock, AccountId, Nonce>,
-    C::Api: NodeNameApi<OpaqueBlock>,
     P: TransactionPool + 'static,
 {
     use polkadot_sdk::substrate_frame_rpc_system::{System, SystemApiServer};
     let mut module = RpcModule::new(());
-    let FullDeps { client, pool } = deps;
+    let FullDeps {
+        client,
+        pool,
+        node_name,
+    } = deps;
 
     module.merge(System::new(client.clone(), pool.clone()).into_rpc())?;
 
-    module.merge(NodeName::new(client.clone()).into_rpc())?;
+    module.merge(NodeName::new(client.clone(), node_name).into_rpc())?;
+
     Ok(module)
 }
