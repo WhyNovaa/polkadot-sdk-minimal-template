@@ -23,6 +23,7 @@ type BalanceOf<T> =
 #[frame::pallet]
 pub mod my_pallet {
     use super::*;
+    use codec::alloc;
 
     use frame::{prelude::*, traits::ExistenceRequirement};
     use polkadot_sdk::{
@@ -68,6 +69,65 @@ pub mod my_pallet {
 
     #[pallet::pallet]
     pub struct Pallet<T>(_);
+
+    #[pallet::hooks]
+    impl<T: Config> Hooks<BlockNumberFor<T>> for Pallet<T> {
+        fn offchain_worker(_block_number: BlockNumberFor<T>) {
+            use crate::my_pallet::alloc::vec;
+            use alloc::string::String;
+            use polkadot_sdk::sp_core::offchain::HttpRequestId;
+            use polkadot_sdk::sp_io::offchain::{
+                http_request_start, http_response_read_body, http_response_wait,
+            };
+            use polkadot_sdk::sp_runtime::offchain::HttpRequestStatus;
+
+            log::info!("Sending request");
+            let id = match http_request_start("GET", "https://polkadot.js.org", &[]) {
+                Ok(id) => {
+                    log::info!("Request was sent successfully, id: {}", id.0);
+                    id
+                }
+                Err(_) => {
+                    log::error!("Http request send error");
+                    return;
+                }
+            };
+
+            log::info!("Waiting for request");
+            let response_status = http_response_wait(&[id], None);
+
+            let _response_code = match response_status[0] {
+                HttpRequestStatus::Finished(response_code) => {
+                    log::info!("Http response code: {}", response_code);
+                    response_code
+                }
+                _ => {
+                    log::error!("Http response error");
+                    return;
+                }
+            };
+
+            log::info!("Reading body request");
+            let mut buff = vec![0; 4096];
+            let bytes_read = match http_response_read_body(id, &mut buff, None) {
+                Ok(bytes_read) => {
+                    log::info!(
+                        "Request's body was read successfully, bytes to read: {}",
+                        bytes_read
+                    );
+                    bytes_read
+                }
+                Err(_) => {
+                    log::error!("Error in reading request's");
+                    return;
+                }
+            };
+
+            let body = String::from_utf8_lossy(&buff[..bytes_read as usize]);
+
+            log::info!("Body: {}", body);
+        }
+    }
 
     #[pallet::call]
     impl<T: Config> Pallet<T> {
