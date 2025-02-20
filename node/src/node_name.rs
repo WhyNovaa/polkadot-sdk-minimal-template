@@ -1,3 +1,5 @@
+//! RPC client for getting node's network name
+
 use jsonrpsee::core::RpcResult;
 use jsonrpsee::proc_macros::rpc;
 use polkadot_sdk::polkadot_service::BlockT;

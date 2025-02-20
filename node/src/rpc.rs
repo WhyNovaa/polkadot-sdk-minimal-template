@@ -39,6 +39,7 @@ pub struct FullDeps<C, P> {
     pub client: Arc<C>,
     /// Transaction pool instance.
     pub pool: Arc<P>,
+    /// Node's network name
     pub node_name: Arc<String>,
 }
 
