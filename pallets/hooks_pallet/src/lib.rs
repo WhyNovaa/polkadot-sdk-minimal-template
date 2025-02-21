@@ -11,20 +11,36 @@ pub use pallet::*;
 #[frame::pallet]
 pub mod pallet {
     use super::*;
+    use codec::alloc::{string::String, vec, vec::Vec};
+    use polkadot_sdk::frame_support;
+    use polkadot_sdk::sp_core::U256;
+    use scale_info::prelude::boxed::Box;
+    #[pallet::storage]
+    pub type Data<T: Config> = StorageMap<
+        _,
+        Blake2_128Concat,
+        BlockNumberFor<T>,
+        BoundedVec<u8, <T as Config>::MaxDataLen>,
+        ValueQuery,
+    >;
 
     #[pallet::config]
-    pub trait Config: polkadot_sdk::frame_system::Config {}
+    pub trait Config: polkadot_sdk::frame_system::Config {
+        #[pallet::constant]
+        type MaxDataLen: Get<u32>;
+    }
 
     #[pallet::pallet]
     pub struct Pallet<T>(_);
 
+    #[pallet::error]
+    pub enum Error<T> {
+        VecToBoundedVecConvertationError,
+    }
+
     #[pallet::hooks]
     impl<T: Config> Hooks<BlockNumberFor<T>> for Pallet<T> {
         fn offchain_worker(_block_number: BlockNumberFor<T>) {
-            use codec::alloc::{
-                string::String,
-                vec
-            };
             use polkadot_sdk::sp_core::offchain::HttpRequestId;
             use polkadot_sdk::sp_io::offchain::{
                 http_request_start, http_response_read_body, http_response_wait,
@@ -46,7 +62,7 @@ pub mod pallet {
             log::info!("Waiting for request");
             let response_status = http_response_wait(&[id], None);
 
-            let _response_code = match response_status[0] {
+            let response_code = match response_status[0] {
                 HttpRequestStatus::Finished(response_code) => {
                     log::info!("Http response code: {}", response_code);
                     response_code
@@ -56,6 +72,11 @@ pub mod pallet {
                     return;
                 }
             };
+
+            if response_code != 200 {
+                log::error!("Bad response code -> stopping");
+                return;
+            }
 
             log::info!("Reading body request");
             let mut buff = vec![0; 4096];
@@ -73,12 +94,53 @@ pub mod pallet {
                 }
             };
 
-            let body = String::from_utf8_lossy(&buff[..bytes_read as usize]);
+            let body_u8 = &buff[..bytes_read as usize];
+            let body = String::from_utf8_lossy(body_u8);
 
             log::info!("Body: {}", body);
+
+            log::info!("Saving data");
+            match Self::save_data(
+                frame_support::dispatch::RawOrigin::None.into(),
+                Vec::from(body_u8),
+            ) {
+                Ok(_) => log::info!("Data was saved successfully"),
+                Err(_) => log::error!("Data wasn't saved successfully"),
+            }
         }
     }
 
-    #[pallet::storage]
-    pub type Value<T> = StorageValue<Value = u32>;
+    #[pallet::call]
+    impl<T: Config> Pallet<T> {
+        #[pallet::call_index(0)]
+        #[pallet::weight(10000)]
+        pub fn save_data(origin: T::RuntimeOrigin, data: Vec<u8>) -> DispatchResult {
+            ensure_none(origin)?;
+
+            let block_number = frame_system::Pallet::<T>::block_number();
+
+            let bounded_vec: BoundedVec<u8, <T as Config>::MaxDataLen> = data
+                .try_into()
+                .map_err(|_| Error::<T>::VecToBoundedVecConvertationError)?;
+
+            Data::<T>::insert(block_number, bounded_vec);
+
+            Ok(())
+        }
+    }
+
+    #[pallet::validate_unsigned]
+    impl<T: Config> ValidateUnsigned for Pallet<T> {
+        type Call = Call<T>;
+
+        fn validate_unsigned(_source: TransactionSource, call: &Self::Call) -> TransactionValidity {
+            match call {
+                Call::save_data { data } => ValidTransaction::with_tag_prefix("Data")
+                    .and_provides(data)
+                    .propagate(true)
+                    .build(),
+                _ => InvalidTransaction::Call.into(),
+            }
+        }
+    }
 }
