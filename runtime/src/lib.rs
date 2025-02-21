@@ -130,8 +130,14 @@ parameter_types! {
     pub const Version: RuntimeVersion = VERSION;
 }
 
+// hooks_pallet
+parameter_types! {
+    pub const URL: &'static str = "https://polkadot.js.org";
+}
+
 impl hooks_pallet::Config for Runtime {
     type MaxDataLen = frame_support::traits::ConstU32<4096>;
+    type URL = URL;
 }
 /// Implements the types required for the system pallet.
 #[derive_impl(frame_system::config_preludes::SolochainDefaultConfig)]
@@ -166,6 +172,7 @@ impl pallet_transaction_payment::Config for Runtime {
     type LengthToFee = FixedFee<1, <Self as pallet_balances::Config>::Balance>;
 }
 
+//pallet_minimal_template
 type Balance = u64;
 type BlockNumber = u32;
 parameter_types! {

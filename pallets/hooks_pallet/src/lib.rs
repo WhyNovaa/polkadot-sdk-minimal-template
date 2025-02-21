@@ -12,9 +12,8 @@ pub use pallet::*;
 pub mod pallet {
     use super::*;
     use codec::alloc::{string::String, vec, vec::Vec};
-    use polkadot_sdk::frame_support;
-    use polkadot_sdk::sp_core::U256;
-    use scale_info::prelude::boxed::Box;
+    use polkadot_sdk::{frame_support, sp_core};
+
     #[pallet::storage]
     pub type Data<T: Config> = StorageMap<
         _,
@@ -28,6 +27,9 @@ pub mod pallet {
     pub trait Config: polkadot_sdk::frame_system::Config {
         #[pallet::constant]
         type MaxDataLen: Get<u32>;
+
+        #[pallet::constant]
+        type URL: Get<&'static str>;
     }
 
     #[pallet::pallet]
@@ -41,14 +43,13 @@ pub mod pallet {
     #[pallet::hooks]
     impl<T: Config> Hooks<BlockNumberFor<T>> for Pallet<T> {
         fn offchain_worker(_block_number: BlockNumberFor<T>) {
-            use polkadot_sdk::sp_core::offchain::HttpRequestId;
             use polkadot_sdk::sp_io::offchain::{
-                http_request_start, http_response_read_body, http_response_wait,
+                http_request_start, http_response_read_body, http_response_wait, timestamp,
             };
             use polkadot_sdk::sp_runtime::offchain::HttpRequestStatus;
 
             log::info!("Sending request");
-            let id = match http_request_start("GET", "https://polkadot.js.org", &[]) {
+            let id = match http_request_start("GET", <T as Config>::URL::get(), &[]) {
                 Ok(id) => {
                     log::info!("Request was sent successfully, id: {}", id.0);
                     id
@@ -59,8 +60,12 @@ pub mod pallet {
                 }
             };
 
+            let now = timestamp();
+            let duration = sp_core::offchain::Duration::from_millis(1000);
+            let wait_deadline = now.add(duration);
+
             log::info!("Waiting for request");
-            let response_status = http_response_wait(&[id], None);
+            let response_status = http_response_wait(&[id], Some(wait_deadline));
 
             let response_code = match response_status[0] {
                 HttpRequestStatus::Finished(response_code) => {
@@ -78,9 +83,14 @@ pub mod pallet {
                 return;
             }
 
-            log::info!("Reading body request");
+            let now = timestamp();
+            let duration = sp_core::offchain::Duration::from_millis(1000);
+            let read_deadline = now.add(duration);
+
             let mut buff = vec![0; 4096];
-            let bytes_read = match http_response_read_body(id, &mut buff, None) {
+
+            log::info!("Reading body request");
+            let bytes_read = match http_response_read_body(id, &mut buff, Some(read_deadline)) {
                 Ok(bytes_read) => {
                     log::info!(
                         "Request's body was read successfully, bytes to read: {}",
@@ -94,15 +104,15 @@ pub mod pallet {
                 }
             };
 
-            let body_u8 = &buff[..bytes_read as usize];
-            let body = String::from_utf8_lossy(body_u8);
+            let body_as_u8 = &buff[..bytes_read as usize];
+            let body = String::from_utf8_lossy(body_as_u8);
 
             log::info!("Body: {}", body);
 
             log::info!("Saving data");
             match Self::save_data(
                 frame_support::dispatch::RawOrigin::None.into(),
-                Vec::from(body_u8),
+                Vec::from(body_as_u8),
             ) {
                 Ok(_) => log::info!("Data was saved successfully"),
                 Err(_) => log::error!("Data wasn't saved successfully"),
