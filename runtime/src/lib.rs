@@ -121,12 +121,16 @@ mod runtime {
     /// A minimal pallet template.
     #[runtime::pallet_index(5)]
     pub type Template = pallet_minimal_template::Pallet<Runtime>;
+
+    #[runtime::pallet_index(6)]
+    pub type Hook = hooks_pallet::Pallet<Runtime>;
 }
 
 parameter_types! {
     pub const Version: RuntimeVersion = VERSION;
 }
 
+impl hooks_pallet::Config for Runtime {}
 /// Implements the types required for the system pallet.
 #[derive_impl(frame_system::config_preludes::SolochainDefaultConfig)]
 impl frame_system::Config for Runtime {

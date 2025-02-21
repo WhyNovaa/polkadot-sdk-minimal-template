@@ -4744,6 +4744,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "hooks-pallet"
+version = "0.1.0"
+dependencies = [
+ "log",
+ "parity-scale-codec",
+ "polkadot-sdk",
+ "scale-info",
+]
+
+[[package]]
 name = "hostname"
 version = "0.3.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -6584,6 +6594,7 @@ dependencies = [
 name = "minimal-template-runtime"
 version = "0.1.0"
 dependencies = [
+ "hooks-pallet",
  "pallet-minimal-template",
  "parity-scale-codec",
  "polkadot-sdk",
