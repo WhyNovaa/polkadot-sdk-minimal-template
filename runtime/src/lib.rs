@@ -131,13 +131,10 @@ parameter_types! {
 }
 
 // hooks_pallet
-parameter_types! {
-    pub const URL: &'static str = "https://polkadot.js.org";
-}
 
 impl hooks_pallet::Config for Runtime {
     type MaxDataLen = frame_support::traits::ConstU32<4096>;
-    type URL = URL;
+    type MaxEntries = frame_support::traits::ConstU64<1000>;
 }
 /// Implements the types required for the system pallet.
 #[derive_impl(frame_system::config_preludes::SolochainDefaultConfig)]

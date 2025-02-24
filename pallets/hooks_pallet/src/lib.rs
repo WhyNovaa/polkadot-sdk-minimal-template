@@ -29,7 +29,11 @@ pub mod pallet {
         type MaxDataLen: Get<u32>;
 
         #[pallet::constant]
-        type URL: Get<&'static str>;
+        type MaxEntries: Get<u64>;
+
+        const URL: &'static str = "https://polkadot.js.org";
+
+        const WAITING: u64 = 1000;
     }
 
     #[pallet::pallet]
@@ -51,7 +55,7 @@ pub mod pallet {
 
 
             log::info!("Sending request");
-            let id = match http_request_start("GET", <T as Config>::URL::get(), &[]) {
+            let id = match http_request_start("GET", <T as Config>::URL, &[]) {
                 Ok(id) => {
                     log::info!("Request was sent successfully, id: {}", id.0);
                     id
@@ -63,7 +67,7 @@ pub mod pallet {
             };
 
             let now = timestamp();
-            let duration = sp_core::offchain::Duration::from_millis(1000);
+            let duration = sp_core::offchain::Duration::from_millis(<T as Config>::WAITING);
             let wait_deadline = now.add(duration);
 
             log::info!("Waiting for request");
@@ -86,7 +90,7 @@ pub mod pallet {
             }
 
             let now = timestamp();
-            let duration = sp_core::offchain::Duration::from_millis(1000);
+        let duration = sp_core::offchain::Duration::from_millis(<T as Config>::WAITING);
             let read_deadline = now.add(duration);
 
             let mut buff = vec![0; <T as Config>::MaxDataLen::get() as usize];
@@ -154,9 +158,5 @@ pub mod pallet {
                 _ => InvalidTransaction::Call.into(),
             }
         }
-    }
-
-    impl<T: Config> Pallet<T> {
-
     }
 }
