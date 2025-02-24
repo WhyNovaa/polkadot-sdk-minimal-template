@@ -48,6 +48,8 @@ pub mod pallet {
             };
             use polkadot_sdk::sp_runtime::offchain::HttpRequestStatus;
 
+
+
             log::info!("Sending request");
             let id = match http_request_start("GET", <T as Config>::URL::get(), &[]) {
                 Ok(id) => {
@@ -87,7 +89,7 @@ pub mod pallet {
             let duration = sp_core::offchain::Duration::from_millis(1000);
             let read_deadline = now.add(duration);
 
-            let mut buff = vec![0; 4096];
+            let mut buff = vec![0; <T as Config>::MaxDataLen::get() as usize];
 
             log::info!("Reading body request");
             let bytes_read = match http_response_read_body(id, &mut buff, Some(read_deadline)) {
@@ -152,5 +154,9 @@ pub mod pallet {
                 _ => InvalidTransaction::Call.into(),
             }
         }
+    }
+
+    impl<T: Config> Pallet<T> {
+
     }
 }
