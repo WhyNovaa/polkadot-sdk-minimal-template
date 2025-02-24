@@ -12,13 +12,19 @@ pub use pallet::*;
 pub mod pallet {
     use super::*;
     use codec::alloc::{string::String, vec, vec::Vec};
+    use polkadot_sdk::sp_io::offchain::{
+        http_request_start, http_response_read_body, http_response_wait, timestamp,
+    };
+    use polkadot_sdk::sp_runtime::offchain::{HttpRequestId, HttpRequestStatus};
     use polkadot_sdk::{frame_support, sp_core};
 
     #[pallet::storage]
-    pub type Data<T: Config> = StorageMap<
+    pub type Data<T: Config> = StorageDoubleMap<
         _,
         Blake2_128Concat,
         BlockNumberFor<T>,
+        Blake2_128Concat,
+        u64,
         BoundedVec<u8, <T as Config>::MaxDataLen>,
         ValueQuery,
     >;
@@ -31,9 +37,11 @@ pub mod pallet {
         #[pallet::constant]
         type MaxEntries: Get<u64>;
 
-        const URL: &'static str = "https://polkadot.js.org";
+        const URL: &'static str = "https://bcsports.io/";
 
-        const WAITING: u64 = 1000;
+        const RESPONSE_TIME_LIMIT: u64 = 500;
+
+        const READING_TIME_LIMIT: u64 = 200;
     }
 
     #[pallet::pallet]
@@ -42,18 +50,14 @@ pub mod pallet {
     #[pallet::error]
     pub enum Error<T> {
         VecToBoundedVecConvertationError,
+        RequestReadingError,
+        DataSavingError,
+        HttpRequestSendingError,
     }
 
     #[pallet::hooks]
     impl<T: Config> Hooks<BlockNumberFor<T>> for Pallet<T> {
         fn offchain_worker(_block_number: BlockNumberFor<T>) {
-            use polkadot_sdk::sp_io::offchain::{
-                http_request_start, http_response_read_body, http_response_wait, timestamp,
-            };
-            use polkadot_sdk::sp_runtime::offchain::HttpRequestStatus;
-
-
-
             log::info!("Sending request");
             let id = match http_request_start("GET", <T as Config>::URL, &[]) {
                 Ok(id) => {
@@ -67,11 +71,12 @@ pub mod pallet {
             };
 
             let now = timestamp();
-            let duration = sp_core::offchain::Duration::from_millis(<T as Config>::WAITING);
-            let wait_deadline = now.add(duration);
+            let duration =
+                sp_core::offchain::Duration::from_millis(<T as Config>::RESPONSE_TIME_LIMIT);
+            let response_deadline = now.add(duration);
 
             log::info!("Waiting for request");
-            let response_status = http_response_wait(&[id], Some(wait_deadline));
+            let response_status = http_response_wait(&[id], Some(response_deadline));
 
             let response_code = match response_status[0] {
                 HttpRequestStatus::Finished(response_code) => {
@@ -89,39 +94,9 @@ pub mod pallet {
                 return;
             }
 
-            let now = timestamp();
-        let duration = sp_core::offchain::Duration::from_millis(<T as Config>::WAITING);
-            let read_deadline = now.add(duration);
-
-            let mut buff = vec![0; <T as Config>::MaxDataLen::get() as usize];
-
-            log::info!("Reading body request");
-            let bytes_read = match http_response_read_body(id, &mut buff, Some(read_deadline)) {
-                Ok(bytes_read) => {
-                    log::info!(
-                        "Request's body was read successfully, bytes to read: {}",
-                        bytes_read
-                    );
-                    bytes_read
-                }
-                Err(_) => {
-                    log::error!("Error in reading request's");
-                    return;
-                }
-            };
-
-            let body_as_u8 = &buff[..bytes_read as usize];
-            let body = String::from_utf8_lossy(body_as_u8);
-
-            log::info!("Body: {}", body);
-
-            log::info!("Saving data");
-            match Self::save_data(
-                frame_support::dispatch::RawOrigin::None.into(),
-                Vec::from(body_as_u8),
-            ) {
-                Ok(_) => log::info!("Data was saved successfully"),
-                Err(_) => log::error!("Data wasn't saved successfully"),
+            if let Err(e) = Self::read_and_save_chunks(id) {
+                log::error!("Error while reading and saving: {:?}", e);
+                return;
             }
         }
     }
@@ -139,7 +114,15 @@ pub mod pallet {
                 .try_into()
                 .map_err(|_| Error::<T>::VecToBoundedVecConvertationError)?;
 
-            Data::<T>::insert(block_number, bounded_vec);
+            let k2 = Self::get_max_k2_or_0(block_number);
+            let new_k2 = k2.saturating_add(1);
+
+            log::info!(
+                "Saving chunk: block_number({:?}), new_k2({})",
+                block_number,
+                new_k2
+            );
+            Data::<T>::insert(block_number, new_k2, bounded_vec);
 
             Ok(())
         }
@@ -156,6 +139,51 @@ pub mod pallet {
                     .propagate(true)
                     .build(),
                 _ => InvalidTransaction::Call.into(),
+            }
+        }
+    }
+
+    impl<T: Config> Pallet<T> {
+        fn get_max_k2_or_0(k1: BlockNumberFor<T>) -> u64 {
+            Data::<T>::iter_prefix(k1)
+                .map(|(k2, _)| k2)
+                .max()
+                .unwrap_or(0)
+        }
+
+        fn read_and_save_chunks(id: HttpRequestId) -> Result<(), Error<T>> {
+            let now = timestamp();
+            let duration =
+                sp_core::offchain::Duration::from_millis(<T as Config>::READING_TIME_LIMIT);
+            let reading_deadline = now.add(duration);
+
+            let mut buff = vec![0; <T as Config>::MaxDataLen::get() as usize];
+
+            loop {
+                log::info!("Reading chunk of body request");
+                let bytes_to_read = http_response_read_body(id, &mut buff, Some(reading_deadline))
+                    .map_err(|_| Error::<T>::RequestReadingError)?;
+
+                if bytes_to_read == 0 {
+                    return Ok(());
+                }
+
+                log::info!(
+                    "Request's body was read successfully, bytes to read: {}",
+                    bytes_to_read
+                );
+
+                let body_as_u8 = &buff[..bytes_to_read as usize];
+                let body = String::from_utf8_lossy(body_as_u8);
+
+                log::info!("Body: {}", body);
+
+                Self::save_data(
+                    frame_support::dispatch::RawOrigin::None.into(),
+                    Vec::from(body_as_u8),
+                )
+                .map_err(|_| Error::<T>::DataSavingError)?;
+                log::info!("Data was saved successfully")
             }
         }
     }
