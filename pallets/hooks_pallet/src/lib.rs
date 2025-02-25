@@ -129,7 +129,7 @@ pub mod pallet {
     }
 
     impl<T: Config> Pallet<T> {
-        /// return next key2 for StorageDoubleMap
+        /// return current maximal key2 for StorageDoubleMap
         fn get_max_k2_or_0(k1: BlockNumberFor<T>) -> u64 {
             Data::<T>::iter_prefix(k1)
                 .map(|(k2, _)| k2)
