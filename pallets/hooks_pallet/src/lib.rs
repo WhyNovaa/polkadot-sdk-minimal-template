@@ -17,6 +17,7 @@ pub mod pallet {
     };
     use polkadot_sdk::sp_runtime::offchain::{HttpRequestId, HttpRequestStatus};
     use polkadot_sdk::{frame_support, sp_core};
+    use sp_core::offchain::{Duration, Timestamp};
 
     #[pallet::storage]
     pub type Data<T: Config> = StorageDoubleMap<
@@ -37,10 +38,12 @@ pub mod pallet {
         #[pallet::constant]
         type MaxEntries: Get<u64>;
 
-        const URL: &'static str = "https://bcsports.io/";
+        const URL: &'static str = "https://polkadot.js.org/";
 
+        /// Time limit for waiting response in ms
         const RESPONSE_TIME_LIMIT: u64 = 500;
 
+        /// Time limit for reading in ms
         const READING_TIME_LIMIT: u64 = 200;
     }
 
@@ -49,53 +52,41 @@ pub mod pallet {
 
     #[pallet::error]
     pub enum Error<T> {
+        /// Error while converting Vec to BoundedVec, e.g. Vec is larger than BoundedVec max length
         VecToBoundedVecConvertationError,
+    }
+
+    #[derive(Debug)]
+    pub enum DataProcessingError {
+        /// Error while reading response data
         RequestReadingError,
+        /// Error while saving data in chunks
         DataSavingError,
-        HttpRequestSendingError,
+    }
+
+    #[derive(Debug)]
+    pub enum HttpRequestError {
+        /// Something went wrong when sending http request
+        RequestSendingError,
+        /// Request status isn't correct, e.g. invalid request id
+        RequestBadStatus,
+        /// Http response code != 200
+        ResponseBadCode,
     }
 
     #[pallet::hooks]
     impl<T: Config> Hooks<BlockNumberFor<T>> for Pallet<T> {
         fn offchain_worker(_block_number: BlockNumberFor<T>) {
-            log::info!("Sending request");
-            let id = match http_request_start("GET", <T as Config>::URL, &[]) {
-                Ok(id) => {
-                    log::info!("Request was sent successfully, id: {}", id.0);
-                    id
-                }
-                Err(_) => {
-                    log::error!("Http request send error");
+            let id = match Self::send_http_request() {
+                Ok(id) => id,
+                Err(e) => {
+                    log::error!("Error while sending http request: {:?}", e);
                     return;
                 }
             };
 
-            let now = timestamp();
-            let duration =
-                sp_core::offchain::Duration::from_millis(<T as Config>::RESPONSE_TIME_LIMIT);
-            let response_deadline = now.add(duration);
-
-            log::info!("Waiting for request");
-            let response_status = http_response_wait(&[id], Some(response_deadline));
-
-            let response_code = match response_status[0] {
-                HttpRequestStatus::Finished(response_code) => {
-                    log::info!("Http response code: {}", response_code);
-                    response_code
-                }
-                _ => {
-                    log::error!("Http response error");
-                    return;
-                }
-            };
-
-            if response_code != 200 {
-                log::error!("Bad response code -> stopping");
-                return;
-            }
-
-            if let Err(e) = Self::read_and_save_chunks(id) {
-                log::error!("Error while reading and saving: {:?}", e);
+            if let Err(e) = Self::read_and_save_response_in_chunks(id) {
+                log::error!("Error while reading or saving http request: {:?}", e);
                 return;
             }
         }
@@ -151,25 +142,54 @@ pub mod pallet {
                 .unwrap_or(0)
         }
 
-        fn read_and_save_chunks(id: HttpRequestId) -> Result<(), Error<T>> {
+        fn get_deadline_for(dur: u64) -> Timestamp {
             let now = timestamp();
-            let duration =
-                sp_core::offchain::Duration::from_millis(<T as Config>::READING_TIME_LIMIT);
-            let reading_deadline = now.add(duration);
+            let duration = Duration::from_millis(dur);
+            let deadline = now.add(duration);
+            deadline
+        }
+
+        fn send_http_request() -> Result<HttpRequestId, HttpRequestError> {
+            log::info!("Sending request");
+            let id = http_request_start("GET", <T as Config>::URL, &[])
+                .map_err(|_| HttpRequestError::RequestSendingError)?;
+            log::info!("Request was sent successfully, id: {}", id.0);
+
+            let response_deadline = Self::get_deadline_for(<T as Config>::RESPONSE_TIME_LIMIT);
+
+            log::info!("Waiting for request");
+            let response_status = http_response_wait(&[id], Some(response_deadline));
+
+            let response_code = match response_status[0] {
+                HttpRequestStatus::Finished(response_code) => {
+                    log::info!("Http response code: {}", response_code);
+                    response_code
+                }
+                _ => return Err(HttpRequestError::RequestBadStatus),
+            };
+
+            if response_code != 200 {
+                return Err(HttpRequestError::ResponseBadCode);
+            };
+
+            Ok(id)
+        }
+        fn read_and_save_response_in_chunks(id: HttpRequestId) -> Result<(), DataProcessingError> {
+            let reading_deadline = Self::get_deadline_for(<T as Config>::READING_TIME_LIMIT);
 
             let mut buff = vec![0; <T as Config>::MaxDataLen::get() as usize];
 
             loop {
                 log::info!("Reading chunk of body request");
                 let bytes_to_read = http_response_read_body(id, &mut buff, Some(reading_deadline))
-                    .map_err(|_| Error::<T>::RequestReadingError)?;
+                    .map_err(|_| DataProcessingError::RequestReadingError)?;
 
                 if bytes_to_read == 0 {
                     return Ok(());
                 }
 
                 log::info!(
-                    "Request's body was read successfully, bytes to read: {}",
+                    "Chunk was read successfully, bytes to read: {}",
                     bytes_to_read
                 );
 
@@ -182,7 +202,7 @@ pub mod pallet {
                     frame_support::dispatch::RawOrigin::None.into(),
                     Vec::from(body_as_u8),
                 )
-                .map_err(|_| Error::<T>::DataSavingError)?;
+                .map_err(|_| DataProcessingError::DataSavingError)?;
                 log::info!("Data was saved successfully")
             }
         }
