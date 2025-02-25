@@ -32,9 +32,11 @@ pub mod pallet {
 
     #[pallet::config]
     pub trait Config: polkadot_sdk::frame_system::Config {
+        /// Maximum data length of BoundedVec in storage Data
         #[pallet::constant]
         type MaxDataLen: Get<u32>;
 
+        ///
         #[pallet::constant]
         type MaxEntries: Get<u64>;
 
@@ -105,15 +107,7 @@ pub mod pallet {
                 .try_into()
                 .map_err(|_| Error::<T>::VecToBoundedVecConvertationError)?;
 
-            let k2 = Self::get_max_k2_or_0(block_number);
-            let new_k2 = k2.saturating_add(1);
-
-            log::info!(
-                "Saving chunk: block_number({:?}), new_k2({})",
-                block_number,
-                new_k2
-            );
-            Data::<T>::insert(block_number, new_k2, bounded_vec);
+            Self::insert_chunk(block_number, bounded_vec);
 
             Ok(())
         }
@@ -135,6 +129,7 @@ pub mod pallet {
     }
 
     impl<T: Config> Pallet<T> {
+        /// return next key2 for StorageDoubleMap
         fn get_max_k2_or_0(k1: BlockNumberFor<T>) -> u64 {
             Data::<T>::iter_prefix(k1)
                 .map(|(k2, _)| k2)
@@ -147,6 +142,18 @@ pub mod pallet {
             let duration = Duration::from_millis(dur);
             let deadline = now.add(duration);
             deadline
+        }
+
+        fn insert_chunk(block_number: BlockNumberFor<T>, bounded_vec: BoundedVec<u8, <T as Config>::MaxDataLen>) {
+            let k2 = Self::get_max_k2_or_0(block_number);
+            let new_k2 = k2.saturating_add(1);
+
+            log::info!(
+                "Saving chunk: block_number({:?}), new_k2({})",
+                block_number,
+                new_k2
+            );
+            Data::<T>::insert(block_number, new_k2, bounded_vec);
         }
 
         fn send_http_request() -> Result<HttpRequestId, HttpRequestError> {
