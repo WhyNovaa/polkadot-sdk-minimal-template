@@ -122,7 +122,7 @@ pub mod pallet {
             let bounded_vec: BoundedVec<u8, <T as Config>::MaxDataLen> = data_chunk
                 .try_into()
                 .map_err(|_| {
-                    log::info!("Convertation error");
+                    log::error!("Convertation error");
                     Error::<T>::VecToBoundedVecConvertationError
                 })?;
 
