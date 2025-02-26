@@ -25,9 +25,11 @@ include!(concat!(env!("OUT_DIR"), "/wasm_binary.rs"));
 
 extern crate alloc;
 
+use crate::interface::AccountId;
 use alloc::{vec, vec::Vec};
 use pallet_transaction_payment::{FeeDetails, RuntimeDispatchInfo};
 use polkadot_sdk::frame_support::PalletId;
+use polkadot_sdk::sp_runtime::{MultiAddress, MultiSignature};
 use polkadot_sdk::{
     polkadot_sdk_frame::{
         self as frame,
@@ -122,6 +124,7 @@ mod runtime {
     #[runtime::pallet_index(5)]
     pub type Template = pallet_minimal_template::Pallet<Runtime>;
 
+    /// Pallet for working with hooks
     #[runtime::pallet_index(6)]
     pub type Hook = hooks_pallet::Pallet<Runtime>;
 }
@@ -130,11 +133,27 @@ parameter_types! {
     pub const Version: RuntimeVersion = VERSION;
 }
 
-// hooks_pallet
+type Address = MultiAddress<AccountId, ()>;
+type Signature = MultiSignature;
+type UncheckedExtrinsic = polkadot_sdk::sp_runtime::generic::UncheckedExtrinsic<
+    Address,
+    RuntimeCall, // Должно быть именно RuntimeCall!
+    Signature,
+    SignedExtra,
+>;
 
+impl<C> frame_system::offchain::SendTransactionTypes<C> for Runtime
+where
+    RuntimeCall: From<C>,
+{
+    type Extrinsic = UncheckedExtrinsic;
+    type OverarchingCall = RuntimeCall;
+}
+
+/// Implements the types required for the hooks pallet
 impl hooks_pallet::Config for Runtime {
     type MaxDataLen = frame_support::traits::ConstU32<4096>;
-    type MaxEntries = frame_support::traits::ConstU64<1000>;
+    type MaxChunks = frame_support::traits::ConstU64<10>;
 }
 /// Implements the types required for the system pallet.
 #[derive_impl(frame_system::config_preludes::SolochainDefaultConfig)]
