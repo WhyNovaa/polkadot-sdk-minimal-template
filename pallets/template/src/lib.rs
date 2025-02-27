@@ -79,7 +79,6 @@ pub mod my_pallet {
             amount: BalanceOf<T>,
         ) -> DispatchResult {
             ensure_none(origin)?;
-
             ensure!(amount <= T::FaucetAmount::get(), Error::<T>::AmountTooHigh);
 
             let (balance, last_time) = LastRequests::<T>::get(&dest);
@@ -105,7 +104,6 @@ pub mod my_pallet {
             T::Currency::transfer(&account_id, &dest, amount, ExistenceRequirement::AllowDeath)?;
 
             LastRequests::<T>::insert(&dest, (total, now));
-
             Ok(())
         }
 

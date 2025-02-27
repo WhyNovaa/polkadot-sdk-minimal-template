@@ -1,13 +1,11 @@
 [package]
-name = "pallet-minimal-template"
-description = "A minimal pallet built with FRAME, part of Polkadot Sdk."
-version = "0.1.1"
-license = "Unlicense"
+name = "hooks-pallet"
+version = "0.1.0"
+license.workspace = true
 authors.workspace = true
 homepage.workspace = true
 repository.workspace = true
 edition.workspace = true
-publish = false
 
 [package.metadata.docs.rs]
 targets = ["x86_64-unknown-linux-gnu"]
@@ -21,3 +19,4 @@ log = "0.4.22"
 [features]
 default = ["std"]
 std = ["codec/std", "polkadot-sdk/std", "scale-info/std"]
+
