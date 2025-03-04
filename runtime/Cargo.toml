@@ -1,4 +1,4 @@
-	[package]
+[package]
 name = "minimal-template-runtime"
 description = "A solochain runtime template built with Substrate, part of Polkadot Sdk."
 version = "0.1.0"
@@ -15,6 +15,7 @@ scale-info = { workspace = true }
 polkadot-sdk = { workspace = true, features = ["experimental", "pallet-balances", "pallet-sudo", "pallet-timestamp", "pallet-transaction-payment", "pallet-transaction-payment-rpc-runtime-api", "runtime"] }
 pallet-minimal-template.workspace = true
 hooks-pallet.workspace = true
+log = "0.4.22"
 
 [build-dependencies]
 polkadot-sdk = { optional = true, workspace = true, features = ["substrate-wasm-builder"] }
