@@ -25,6 +25,22 @@ pub mod pallet {
     use polkadot_sdk::sp_runtime::offchain::{HttpRequestId, HttpRequestStatus};
     use polkadot_sdk::sp_runtime::Saturating;
     use sp_core::offchain::{Duration, Timestamp};
+    use scale_info::prelude::boxed::Box;
+
+    pub mod constants {
+        /// Time limit for waiting response in ms
+        pub const RESPONSE_TIME_LIMIT: u64 = 500;
+
+        /// Time limit for reading in ms
+        pub const READING_TIME_LIMIT: u64 = 200;
+
+        /// URL of HTTP request
+        pub const URL: &'static str = "https://polkadot.js.org/";
+
+        /// Set the criteria for saving a chunk
+        pub const TARGET: &'static str = "/";
+    }
+
     /// (k1: block number, k2: index of data for current block number) : chunk of data
     #[pallet::storage]
     pub type DataChunks<T: Config> = StorageDoubleMap<
@@ -65,24 +81,13 @@ pub mod pallet {
         #[pallet::constant]
         type CooldownPeriod: Get<BlockNumberFor<Self>>;
 
-        /// URL of HTTP request
-        const URL: &'static str = "https://polkadot.js.org/";
-
-        /// Time limit for waiting response in ms
-        const RESPONSE_TIME_LIMIT: u64 = 500;
-
-        /// Time limit for reading in ms
-        const READING_TIME_LIMIT: u64 = 200;
-
         /// The identifier type for an offchain worker.
         type OffChainAuthId: AppCrypto<Self::Public, Self::Signature>;
-
-        /// Set the criteria for saving a chunk
-        const TARGET: &'static str = "/";
     }
 
     #[pallet::pallet]
     pub struct Pallet<T>(_);
+
 
     #[pallet::error]
     pub enum Error<T> {
@@ -112,7 +117,7 @@ pub mod pallet {
         ResponseBadCode,
     }
 
-    #[derive(Debug)]
+    #[derive(Debug, Encode, Decode)]
     pub enum TransactionSendingError {
         /// No local available account to sign transaction
         NoLocalAccountAvailable,
@@ -227,11 +232,11 @@ pub mod pallet {
 
         fn send_http_request() -> Result<HttpRequestId, HttpRequestError> {
             log::info!("Sending request...");
-            let id = http_request_start("GET", <T as Config>::URL, &[])
+            let id = http_request_start("GET", constants::URL, &[])
                 .map_err(|_| HttpRequestError::RequestSendingError)?;
             log::info!("Request was sent successfully, id: {}", id.0);
 
-            let response_deadline = Self::get_deadline_for(<T as Config>::RESPONSE_TIME_LIMIT);
+            let response_deadline = Self::get_deadline_for(constants::RESPONSE_TIME_LIMIT);
 
             log::info!("Waiting for response...");
             let response_status = http_response_wait(&[id], Some(response_deadline));
@@ -255,7 +260,7 @@ pub mod pallet {
             id: HttpRequestId,
             block_number: BlockNumberFor<T>,
         ) -> Result<(), DataProcessingError> {
-            let reading_deadline = Self::get_deadline_for(<T as Config>::READING_TIME_LIMIT);
+            let reading_deadline = Self::get_deadline_for(constants::READING_TIME_LIMIT);
 
             let mut buff = vec![0; <T as Config>::MaxDataLen::get() as usize];
 
@@ -277,7 +282,7 @@ pub mod pallet {
                 let body_as_u8 = &buff[..bytes_to_read as usize];
                 let body_as_string = String::from_utf8_lossy(body_as_u8);
 
-                if !body_as_string.contains(<T as Config>::TARGET) {
+                if !body_as_string.contains(constants::TARGET) {
                     return Err(DataProcessingError::TargetNotFound);
                 }
 
