@@ -117,7 +117,7 @@ pub mod pallet {
         ResponseBadCode,
     }
 
-    #[derive(Debug, Encode, Decode)]
+    #[derive(Debug)]
     pub enum TransactionSendingError {
         /// No local available account to sign transaction
         NoLocalAccountAvailable,
