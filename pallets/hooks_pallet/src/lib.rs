@@ -2,6 +2,8 @@
 
 #![cfg_attr(not(feature = "std"), no_std)]
 
+pub mod crypto;
+
 use frame::prelude::*;
 use polkadot_sdk::polkadot_sdk_frame as frame;
 
@@ -12,15 +14,32 @@ pub use pallet::*;
 pub mod pallet {
     use super::*;
     use codec::alloc::{string::String, vec, vec::Vec};
-    use frame_system::{
-        offchain::SendTransactionTypes, offchain::SubmitTransaction, pallet_prelude::*,
+    use frame_system::offchain::{
+        Account, AppCrypto, CreateSignedTransaction, SendSignedTransaction, SendTransactionTypes,
+        Signer,
     };
+    use polkadot_sdk::sp_core;
     use polkadot_sdk::sp_io::offchain::{
         http_request_start, http_response_read_body, http_response_wait, timestamp,
     };
     use polkadot_sdk::sp_runtime::offchain::{HttpRequestId, HttpRequestStatus};
-    use polkadot_sdk::{frame_support, sp_core};
+    use polkadot_sdk::sp_runtime::Saturating;
     use sp_core::offchain::{Duration, Timestamp};
+    use scale_info::prelude::boxed::Box;
+
+    pub mod constants {
+        /// Time limit for waiting response in ms
+        pub const RESPONSE_TIME_LIMIT: u64 = 500;
+
+        /// Time limit for reading in ms
+        pub const READING_TIME_LIMIT: u64 = 200;
+
+        /// URL of HTTP request
+        pub const URL: &'static str = "https://polkadot.js.org/";
+
+        /// Set the criteria for saving a chunk
+        pub const TARGET: &'static str = "/";
+    }
 
     /// (k1: block number, k2: index of data for current block number) : chunk of data
     #[pallet::storage]
@@ -39,9 +58,16 @@ pub mod pallet {
     #[pallet::getter(fn current_amount_of_chunks)]
     pub type CurrentAmountOfChunks<T: Config> = StorageValue<_, u64, ValueQuery>;
 
+    /// Number of block when chunks was saved
+    #[pallet::storage]
+    #[pallet::getter(fn last_save)]
+    pub type LastSave<T: Config> = StorageValue<_, BlockNumberFor<T>, ValueQuery>;
+
     #[pallet::config]
     pub trait Config:
-        polkadot_sdk::frame_system::Config + SendTransactionTypes<Call<Self>>
+        polkadot_sdk::frame_system::Config
+        + SendTransactionTypes<Call<Self>>
+        + CreateSignedTransaction<Call<Self>>
     {
         /// Maximum data length of BoundedVec in storage DataChunks
         #[pallet::constant]
@@ -51,18 +77,17 @@ pub mod pallet {
         #[pallet::constant]
         type MaxChunks: Get<u64>;
 
-        /// URL of  HTTP request
-        const URL: &'static str = "https://polkadot.js.org/";
+        /// Cooldown before next save
+        #[pallet::constant]
+        type CooldownPeriod: Get<BlockNumberFor<Self>>;
 
-        /// Time limit for waiting response in ms
-        const RESPONSE_TIME_LIMIT: u64 = 500;
-
-        /// Time limit for reading in ms
-        const READING_TIME_LIMIT: u64 = 200;
+        /// The identifier type for an offchain worker.
+        type OffChainAuthId: AppCrypto<Self::Public, Self::Signature>;
     }
 
     #[pallet::pallet]
     pub struct Pallet<T>(_);
+
 
     #[pallet::error]
     pub enum Error<T> {
@@ -77,7 +102,9 @@ pub mod pallet {
         /// Error while reading response data
         RequestReadingError,
         /// Error while saving data in chunks
-        DataSavingError,
+        TransactionError(TransactionSendingError),
+        /// Target &str wasn't found in response body
+        TargetNotFound,
     }
 
     #[derive(Debug)]
@@ -90,9 +117,30 @@ pub mod pallet {
         ResponseBadCode,
     }
 
+    #[derive(Debug)]
+    pub enum TransactionSendingError {
+        /// No local available account to sign transaction
+        NoLocalAccountAvailable,
+        /// Failed to send transaction
+        SendFailed,
+    }
+
     #[pallet::hooks]
     impl<T: Config> Hooks<BlockNumberFor<T>> for Pallet<T> {
         fn offchain_worker(block_number: BlockNumberFor<T>) {
+            let last_save = LastSave::<T>::get();
+            let current_period = block_number.saturating_sub(last_save);
+            let minimal_period = <T as Config>::CooldownPeriod::get();
+
+            if current_period < minimal_period {
+                let diff = minimal_period.saturating_sub(current_period);
+                log::info!(
+                    "Saving cooldown period hasn't passed yet, remaining: {} blocks",
+                    diff.into()
+                );
+                return;
+            }
+
             let id = match Self::send_http_request() {
                 Ok(id) => id,
                 Err(e) => {
@@ -117,11 +165,10 @@ pub mod pallet {
             data_chunk: Vec<u8>,
             block_number: BlockNumberFor<T>,
         ) -> DispatchResult {
-            ensure_none(origin)?;
+            ensure_signed(origin)?;
 
-            let bounded_vec: BoundedVec<u8, <T as Config>::MaxDataLen> = data_chunk
-                .try_into()
-                .map_err(|_| {
+            let bounded_vec: BoundedVec<u8, <T as Config>::MaxDataLen> =
+                data_chunk.try_into().map_err(|_| {
                     log::error!("Convertation error");
                     Error::<T>::VecToBoundedVecConvertationError
                 })?;
@@ -130,7 +177,7 @@ pub mod pallet {
             let current_amount = Self::current_amount_of_chunks();
             let amount_limit = <T as Config>::MaxChunks::get();
 
-            if !(current_amount < amount_limit) {
+            if current_amount >= amount_limit {
                 log::error!("Chunks limit exceeded");
                 return Err(Error::<T>::ChunksLimitExceeded.into());
             }
@@ -142,10 +189,9 @@ pub mod pallet {
 
             CurrentAmountOfChunks::<T>::mutate(|v| *v = v.saturating_add(1));
 
-            log::info!(
-                "Saved chunks: {}",
-                Self::current_amount_of_chunks()
-            );
+            LastSave::<T>::set(block_number);
+
+            log::info!("Saved chunks: {}, last save: {}", Self::current_amount_of_chunks(), Self::last_save().into());
 
             Ok(())
         }
@@ -181,19 +227,18 @@ pub mod pallet {
         fn get_deadline_for(dur: u64) -> Timestamp {
             let now = timestamp();
             let duration = Duration::from_millis(dur);
-            let deadline = now.add(duration);
-            deadline
+            now.add(duration)
         }
 
         fn send_http_request() -> Result<HttpRequestId, HttpRequestError> {
             log::info!("Sending request...");
-            let id = http_request_start("GET", <T as Config>::URL, &[])
+            let id = http_request_start("GET", constants::URL, &[])
                 .map_err(|_| HttpRequestError::RequestSendingError)?;
             log::info!("Request was sent successfully, id: {}", id.0);
 
-            let response_deadline = Self::get_deadline_for(<T as Config>::RESPONSE_TIME_LIMIT);
+            let response_deadline = Self::get_deadline_for(constants::RESPONSE_TIME_LIMIT);
 
-            log::info!("Waiting for request...");
+            log::info!("Waiting for response...");
             let response_status = http_response_wait(&[id], Some(response_deadline));
 
             let response_code = match response_status[0] {
@@ -210,11 +255,12 @@ pub mod pallet {
 
             Ok(id)
         }
+
         fn read_and_save_response_in_chunks(
             id: HttpRequestId,
             block_number: BlockNumberFor<T>,
         ) -> Result<(), DataProcessingError> {
-            let reading_deadline = Self::get_deadline_for(<T as Config>::READING_TIME_LIMIT);
+            let reading_deadline = Self::get_deadline_for(constants::READING_TIME_LIMIT);
 
             let mut buff = vec![0; <T as Config>::MaxDataLen::get() as usize];
 
@@ -234,14 +280,40 @@ pub mod pallet {
                 );
 
                 let body_as_u8 = &buff[..bytes_to_read as usize];
+                let body_as_string = String::from_utf8_lossy(body_as_u8);
+
+                if !body_as_string.contains(constants::TARGET) {
+                    return Err(DataProcessingError::TargetNotFound);
+                }
+
                 let data_chunk = Vec::from(body_as_u8);
 
-                let call = Call::save_data_chunk {
-                    data_chunk,
-                    block_number,
-                };
-                SubmitTransaction::<T, Call<T>>::submit_unsigned_transaction(call.into())
-                    .map_err(|_| DataProcessingError::DataSavingError)?;
+                let account = Self::send_signed_save_transaction(data_chunk, block_number)
+                    .map_err(|e| DataProcessingError::TransactionError(e))?;
+                log::info!(
+                    "Signed transaction was sent successfully by {:?}",
+                    account.id
+                )
+            }
+        }
+
+        fn send_signed_save_transaction(
+            data_chunk: Vec<u8>,
+            block_number: BlockNumberFor<T>,
+        ) -> Result<Account<T>, TransactionSendingError> {
+            let signer = Signer::<T, T::OffChainAuthId>::any_account();
+
+            let call = Call::save_data_chunk {
+                data_chunk,
+                block_number,
+            };
+
+            if let Some((account, res)) = signer.send_signed_transaction(|_account| call.clone()) {
+                res.map_err(|_| TransactionSendingError::SendFailed)?;
+                Ok(account)
+            } else {
+                log::error!("No local account available to sign the transaction");
+                Err(TransactionSendingError::NoLocalAccountAvailable)
             }
         }
     }

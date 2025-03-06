@@ -6595,6 +6595,7 @@ name = "minimal-template-runtime"
 version = "0.1.0"
 dependencies = [
  "hooks-pallet",
+ "log",
  "pallet-minimal-template",
  "parity-scale-codec",
  "polkadot-sdk",

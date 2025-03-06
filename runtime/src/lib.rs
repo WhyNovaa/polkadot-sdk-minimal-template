@@ -25,11 +25,11 @@ include!(concat!(env!("OUT_DIR"), "/wasm_binary.rs"));
 
 extern crate alloc;
 
-use crate::interface::AccountId;
 use alloc::{vec, vec::Vec};
 use pallet_transaction_payment::{FeeDetails, RuntimeDispatchInfo};
 use polkadot_sdk::frame_support::PalletId;
-use polkadot_sdk::sp_runtime::{MultiAddress, MultiSignature};
+use polkadot_sdk::sp_runtime::traits::{IdentifyAccount, Verify};
+use polkadot_sdk::sp_runtime::{generic, MultiAddress, MultiSignature, SaturatedConversion};
 use polkadot_sdk::{
     polkadot_sdk_frame::{
         self as frame,
@@ -133,14 +133,78 @@ parameter_types! {
     pub const Version: RuntimeVersion = VERSION;
 }
 
+type AccountId = <<Signature as Verify>::Signer as IdentifyAccount>::AccountId;
+
+pub type Nonce = u32;
+
+pub type SignedPayload = generic::SignedPayload<RuntimeCall, SignedExtra>;
+
 type Address = MultiAddress<AccountId, ()>;
+
 type Signature = MultiSignature;
+
 type UncheckedExtrinsic = polkadot_sdk::sp_runtime::generic::UncheckedExtrinsic<
     Address,
-    RuntimeCall, // Должно быть именно RuntimeCall!
+    RuntimeCall,
     Signature,
     SignedExtra,
 >;
+
+type Balance = u64;
+
+type BlockNumber = u32;
+
+parameter_types! {
+    pub const BlockHashCount: BlockNumber = 10;
+}
+impl<LocalCall> frame_system::offchain::CreateSignedTransaction<LocalCall> for Runtime
+where
+    RuntimeCall: From<LocalCall>,
+{
+    fn create_transaction<C: frame_system::offchain::AppCrypto<Self::Public, Self::Signature>>(
+        call: RuntimeCall,
+        public: <Signature as Verify>::Signer,
+        account: AccountId,
+        index: Nonce,
+    ) -> Option<(
+        RuntimeCall,
+        <UncheckedExtrinsic as sp_runtime::traits::Extrinsic>::SignaturePayload,
+    )> {
+        let period = BlockHashCount::get() as u64;
+        let current_block = System::block_number()
+            .saturated_into::<u64>()
+            .saturating_sub(1);
+        let tip = 0;
+        let extra: SignedExtra = (
+            frame_system::CheckNonZeroSender::<Runtime>::new(),
+            frame_system::CheckSpecVersion::<Runtime>::new(),
+            frame_system::CheckTxVersion::<Runtime>::new(),
+            frame_system::CheckGenesis::<Runtime>::new(),
+            frame_system::CheckEra::<Runtime>::from(generic::Era::mortal(period, current_block)),
+            frame_system::CheckNonce::<Runtime>::from(index),
+            frame_system::CheckWeight::<Runtime>::new(),
+            pallet_transaction_payment::ChargeTransactionPayment::<Runtime>::from(tip),
+        );
+
+        #[cfg_attr(not(feature = "std"), allow(unused_variables))]
+        let raw_payload = SignedPayload::new(call, extra)
+            .map_err(|e| {
+                log::warn!("SignedPayload error: {:?}", e);
+            })
+            .ok()?;
+
+        let signature = raw_payload.using_encoded(|payload| C::sign(payload, public))?;
+
+        let address = MultiAddress::Id(account);
+        let (call, extra, _) = raw_payload.deconstruct();
+        Some((call, (address, signature, extra)))
+    }
+}
+
+impl frame_system::offchain::SigningTypes for Runtime {
+    type Public = <Signature as Verify>::Signer;
+    type Signature = Signature;
+}
 
 impl<C> frame_system::offchain::SendTransactionTypes<C> for Runtime
 where
@@ -150,11 +214,17 @@ where
     type OverarchingCall = RuntimeCall;
 }
 
-/// Implements the types required for the hooks pallet
+// Implements the types required for the hooks pallet
+parameter_types! {
+    pub const CooldownPeriod: BlockNumber = 5;
+}
 impl hooks_pallet::Config for Runtime {
     type MaxDataLen = frame_support::traits::ConstU32<4096>;
     type MaxChunks = frame_support::traits::ConstU64<10>;
+    type CooldownPeriod = CooldownPeriod;
+    type OffChainAuthId = hooks_pallet::crypto::OffchainAuthId;
 }
+
 /// Implements the types required for the system pallet.
 #[derive_impl(frame_system::config_preludes::SolochainDefaultConfig)]
 impl frame_system::Config for Runtime {
@@ -162,6 +232,8 @@ impl frame_system::Config for Runtime {
     type Version = Version;
     // Use the account data from the balances pallet
     type AccountData = pallet_balances::AccountData<<Runtime as pallet_balances::Config>::Balance>;
+
+    //type AccountId =  AccountId;
 }
 
 // Implements the types required for the balances pallet.
@@ -189,8 +261,6 @@ impl pallet_transaction_payment::Config for Runtime {
 }
 
 //pallet_minimal_template
-type Balance = u64;
-type BlockNumber = u32;
 parameter_types! {
     pub AccumulationPeriod: BlockNumber = 20;
     pub const FaucetAmount: Balance = 250_u64;
